@@ -1,7 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::fs::File;
+use std::hint::black_box;
 use std::io::Write;
-use std::path::Path;
 use tempfile::TempDir;
 use threatflux_hashing::{
     calculate_all_hashes, calculate_all_hashes_with_config, HashAlgorithms, HashConfig,
