@@ -78,7 +78,7 @@ jobs:
           -W clippy::unimplemented \
           -W clippy::todo \
           -W clippy::unreachable \
-          -W clippy::integer_arithmetic \
+          -W clippy::arithmetic_side_effects \
           -W clippy::float_arithmetic \
           -W clippy::indexing_slicing \
           -W clippy::as_conversions \

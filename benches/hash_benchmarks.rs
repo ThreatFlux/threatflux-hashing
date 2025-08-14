@@ -9,16 +9,16 @@ use threatflux_hashing::{
 use tokio::runtime::Runtime;
 
 fn create_test_file(size: usize) -> (TempDir, std::path::PathBuf) {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory for benchmark");
     let file_path = temp_dir.path().join("bench_file");
-    let mut file = File::create(&file_path).unwrap();
+    let mut file = File::create(&file_path).expect("Failed to create benchmark file");
 
     // Create predictable content
     let chunk = b"0123456789ABCDEF";
     let mut written = 0;
     while written < size {
         let to_write = std::cmp::min(chunk.len(), size - written);
-        file.write_all(&chunk[..to_write]).unwrap();
+        file.write_all(&chunk[..to_write]).expect("Failed to write benchmark data");
         written += to_write;
     }
 
@@ -26,7 +26,7 @@ fn create_test_file(size: usize) -> (TempDir, std::path::PathBuf) {
 }
 
 fn bench_all_hashes(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("Failed to create tokio runtime");
     let mut group = c.benchmark_group("all_hashes");
 
     for size in [1024, 1024 * 1024, 10 * 1024 * 1024].iter() {
@@ -35,7 +35,7 @@ fn bench_all_hashes(c: &mut Criterion) {
         group.throughput(criterion::Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                rt.block_on(async { calculate_all_hashes(black_box(&file_path)).await.unwrap() })
+                rt.block_on(async { calculate_all_hashes(black_box(&file_path)).await.expect("Hash calculation failed") })
             });
         });
     }
@@ -44,7 +44,7 @@ fn bench_all_hashes(c: &mut Criterion) {
 }
 
 fn bench_individual_algorithms(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("Failed to create tokio runtime");
     let size = 1024 * 1024; // 1MB file
     let (_temp_dir, file_path) = create_test_file(size);
 
@@ -67,7 +67,7 @@ fn bench_individual_algorithms(c: &mut Criterion) {
             rt.block_on(async {
                 calculate_all_hashes_with_config(black_box(&file_path), &config)
                     .await
-                    .unwrap()
+                    .expect("Hash calculation failed")
             })
         });
     });
@@ -88,7 +88,7 @@ fn bench_individual_algorithms(c: &mut Criterion) {
             rt.block_on(async {
                 calculate_all_hashes_with_config(black_box(&file_path), &config)
                     .await
-                    .unwrap()
+                    .expect("Hash calculation failed")
             })
         });
     });
@@ -109,7 +109,7 @@ fn bench_individual_algorithms(c: &mut Criterion) {
             rt.block_on(async {
                 calculate_all_hashes_with_config(black_box(&file_path), &config)
                     .await
-                    .unwrap()
+                    .expect("Hash calculation failed")
             })
         });
     });
@@ -130,7 +130,7 @@ fn bench_individual_algorithms(c: &mut Criterion) {
             rt.block_on(async {
                 calculate_all_hashes_with_config(black_box(&file_path), &config)
                     .await
-                    .unwrap()
+                    .expect("Hash calculation failed")
             })
         });
     });
@@ -139,7 +139,7 @@ fn bench_individual_algorithms(c: &mut Criterion) {
 }
 
 fn bench_buffer_sizes(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = Runtime::new().expect("Failed to create tokio runtime");
     let size = 10 * 1024 * 1024; // 10MB file
     let (_temp_dir, file_path) = create_test_file(size);
 
@@ -160,7 +160,7 @@ fn bench_buffer_sizes(c: &mut Criterion) {
                     rt.block_on(async {
                         calculate_all_hashes_with_config(black_box(&file_path), &config)
                             .await
-                            .unwrap()
+                            .expect("Hash calculation failed")
                     })
                 });
             },

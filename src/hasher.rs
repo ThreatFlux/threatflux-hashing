@@ -135,10 +135,18 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     let results: Vec<_> = futures::future::try_join_all(tasks).await?;
 
     Ok(Hashes {
-        md5: results.first().and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
-        sha256: results.get(1).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
-        sha512: results.get(2).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
-        blake3: results.get(3).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        md5: results
+            .first()
+            .and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        sha256: results
+            .get(1)
+            .and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        sha512: results
+            .get(2)
+            .and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        blake3: results
+            .get(3)
+            .and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
     })
 }
 
