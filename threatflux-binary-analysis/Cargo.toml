@@ -49,7 +49,7 @@ iced-x86 = { version = "1.21", optional = true }
 wasmparser = { version = "0.217", optional = true }
 
 # Control flow analysis (optional)
-petgraph = { version = "0.6", optional = true }
+petgraph = { version = "0.8", optional = true }
 
 # Statistical analysis (optional)  
 statrs = { version = "0.17", optional = true }
