@@ -71,7 +71,7 @@ env_logger = "0.11"
 # Async testing
 futures = "0.3"
 # Mock and test data
-rand = "0.8"
+rand = "0.9"
 
 # Examples and benchmarks currently disabled - files not implemented yet
 # [[example]]
