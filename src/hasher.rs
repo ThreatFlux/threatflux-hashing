@@ -84,7 +84,7 @@ pub struct Hashes {
 
 /// Calculate all configured hashes for a file
 pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) -> Result<Hashes> {
-    let path = path.to_path_buf();
+    let path_buf = path.to_path_buf();
     let semaphore = get_hash_semaphore(config.max_concurrent_operations);
 
     // Acquire permit to limit concurrent operations
@@ -97,7 +97,7 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     let buffer_size = config.buffer_size;
 
     if config.algorithms.md5 {
-        let path_clone = path.clone();
+        let path_clone = path_buf.clone();
         tasks.push(task::spawn_blocking(move || {
             calculate_md5_sync(&path_clone, buffer_size).map(Some)
         }));
@@ -106,7 +106,7 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     }
 
     if config.algorithms.sha256 {
-        let path_clone = path.clone();
+        let path_clone = path_buf.clone();
         tasks.push(task::spawn_blocking(move || {
             calculate_sha256(&path_clone, buffer_size).map(Some)
         }));
@@ -115,7 +115,7 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     }
 
     if config.algorithms.sha512 {
-        let path_clone = path.clone();
+        let path_clone = path_buf.clone();
         tasks.push(task::spawn_blocking(move || {
             calculate_sha512(&path_clone, buffer_size).map(Some)
         }));
@@ -124,7 +124,7 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     }
 
     if config.algorithms.blake3 {
-        let path_clone = path.clone();
+        let path_clone = path_buf.clone();
         tasks.push(task::spawn_blocking(move || {
             calculate_blake3(&path_clone, buffer_size).map(Some)
         }));
@@ -135,10 +135,10 @@ pub async fn calculate_all_hashes_with_config(path: &Path, config: &HashConfig) 
     let results: Vec<_> = futures::future::try_join_all(tasks).await?;
 
     Ok(Hashes {
-        md5: results[0].as_ref().ok().and_then(|v| v.clone()),
-        sha256: results[1].as_ref().ok().and_then(|v| v.clone()),
-        sha512: results[2].as_ref().ok().and_then(|v| v.clone()),
-        blake3: results[3].as_ref().ok().and_then(|v| v.clone()),
+        md5: results.first().and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        sha256: results.get(1).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        sha512: results.get(2).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
+        blake3: results.get(3).and_then(|r| r.as_ref().ok().and_then(|v| v.clone())),
     })
 }
 
@@ -150,14 +150,14 @@ pub async fn calculate_all_hashes(path: &Path) -> Result<Hashes> {
 
 /// Calculate MD5 hash asynchronously
 pub async fn calculate_md5(path: &Path) -> Result<String> {
-    let path = path.to_path_buf();
+    let path_buf = path.to_path_buf();
     let semaphore = get_hash_semaphore(10);
     let _permit = semaphore
         .acquire()
         .await
         .map_err(|_| HashError::SemaphoreError)?;
 
-    task::spawn_blocking(move || calculate_md5_sync(&path, 8192)).await?
+    task::spawn_blocking(move || calculate_md5_sync(&path_buf, 8192)).await?
 }
 
 fn calculate_md5_sync(path: &Path, buffer_size: usize) -> Result<String> {
@@ -171,7 +171,9 @@ fn calculate_md5_sync(path: &Path, buffer_size: usize) -> Result<String> {
         if count == 0 {
             break;
         }
-        hasher.update(&buffer[..count]);
+        if let Some(slice) = buffer.get(..count) {
+            hasher.update(slice);
+        }
     }
 
     Ok(format!("{:x}", hasher.finalize()))
@@ -188,7 +190,9 @@ fn calculate_sha256(path: &Path, buffer_size: usize) -> Result<String> {
         if count == 0 {
             break;
         }
-        hasher.update(&buffer[..count]);
+        if let Some(slice) = buffer.get(..count) {
+            hasher.update(slice);
+        }
     }
 
     Ok(format!("{:x}", hasher.finalize()))
@@ -205,7 +209,9 @@ fn calculate_sha512(path: &Path, buffer_size: usize) -> Result<String> {
         if count == 0 {
             break;
         }
-        hasher.update(&buffer[..count]);
+        if let Some(slice) = buffer.get(..count) {
+            hasher.update(slice);
+        }
     }
 
     Ok(format!("{:x}", hasher.finalize()))
@@ -222,7 +228,9 @@ fn calculate_blake3(path: &Path, buffer_size: usize) -> Result<String> {
         if count == 0 {
             break;
         }
-        hasher.update(&buffer[..count]);
+        if let Some(slice) = buffer.get(..count) {
+            hasher.update(slice);
+        }
     }
 
     Ok(hasher.finalize().to_string())
@@ -395,8 +403,8 @@ mod tests {
         }
 
         // Verify all results are identical
-        let first = &results[0];
-        for result in &results[1..] {
+        let first = results.first().expect("Should have at least one result");
+        for result in results.iter().skip(1) {
             assert_eq!(result.md5, first.md5);
             assert_eq!(result.sha256, first.sha256);
             assert_eq!(result.sha512, first.sha512);
