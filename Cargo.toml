@@ -9,7 +9,7 @@ authors = ["ThreatFlux"]
 description = "High-performance async file hashing library supporting MD5, SHA256, SHA512, and BLAKE3"
 license = "MIT"
 repository = "https://github.com/ThreatFlux/threatflux-hashing"
-keywords = ["hash", "crypto", "async", "md5", "sha256", "sha512", "blake3"]
+keywords = ["hash", "crypto", "async", "hashing"]
 categories = ["cryptography", "filesystem", "asynchronous"]
 readme = "README.md"
 
