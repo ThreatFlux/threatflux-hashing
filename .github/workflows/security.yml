@@ -47,12 +47,19 @@ jobs:
 
     - name: Check for vulnerabilities
       run: |
-        if [ -s audit-results.json ]; then
-          echo "Security vulnerabilities found!"
-          cat audit-results.json
-          exit 1
+        if [ -f audit-results.json ]; then
+          # Check if any vulnerabilities were found (count > 0)
+          VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' audit-results.json)
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "Security vulnerabilities found ($VULN_COUNT)!"
+            cat audit-results.json
+            exit 1
+          else
+            echo "No security vulnerabilities found."
+          fi
         else
-          echo "No security vulnerabilities found."
+          echo "Audit results file not found."
+          exit 1
         fi
 
   clippy-security:
@@ -257,8 +264,6 @@ jobs:
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: main
-        head: HEAD
         extra_args: --debug --only-verified
 
   code-ql:
