@@ -18,7 +18,8 @@ fn create_test_file(size: usize) -> (TempDir, std::path::PathBuf) {
     let mut written = 0;
     while written < size {
         let to_write = std::cmp::min(chunk.len(), size - written);
-        file.write_all(&chunk[..to_write]).expect("Failed to write benchmark data");
+        file.write_all(&chunk[..to_write])
+            .expect("Failed to write benchmark data");
         written += to_write;
     }
 
@@ -35,7 +36,11 @@ fn bench_all_hashes(c: &mut Criterion) {
         group.throughput(criterion::Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                rt.block_on(async { calculate_all_hashes(black_box(&file_path)).await.expect("Hash calculation failed") })
+                rt.block_on(async {
+                    calculate_all_hashes(black_box(&file_path))
+                        .await
+                        .expect("Hash calculation failed")
+                })
             });
         });
     }
