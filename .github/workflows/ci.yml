@@ -133,15 +133,6 @@ jobs:
     - name: Run benchmarks
       run: cargo bench --bench hash_benchmarks
 
-    - name: Store benchmark result
-      uses: benchmark-action/github-action-benchmark@v1
-      if: github.ref == 'refs/heads/main'
-      with:
-        tool: 'cargo'
-        output-file-path: target/criterion/report/index.html
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        auto-push: true
-
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
