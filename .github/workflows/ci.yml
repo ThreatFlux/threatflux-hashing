@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -70,7 +70,7 @@ jobs:
     name: Linting
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -95,7 +95,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -111,7 +111,7 @@ jobs:
       run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         files: lcov.info
         fail_ci_if_error: false
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -137,7 +137,7 @@ jobs:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install cargo-msrv
       run: cargo install cargo-msrv
@@ -149,7 +149,7 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
