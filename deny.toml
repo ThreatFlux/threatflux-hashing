@@ -9,9 +9,7 @@ allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Unicode-DFS-2016",
+    "Unicode-3.0",
     "CC0-1.0",
 ]
 # Note: GPL-3.0, AGPL-3.0, LGPL-3.0, LGPL-2.1 are implicitly denied since they're not in allow list
@@ -32,10 +30,7 @@ deny = [
 
 # Allow certain crates to have multiple versions (useful for build dependencies)
 skip = [
-    # Build tools can have different versions
-    { name = "syn" },
-    { name = "quote" },
-    { name = "proc-macro2" },
+    # Add specific crates that have legitimate multiple versions here when needed
 ]
 
 # Skip certain crates during duplicate detection entirely
@@ -54,8 +49,8 @@ db-urls = ["https://github.com/RustSec/advisory-db"]
 # The lint level for unmaintained crates (all, workspace, transitive, none)
 unmaintained = "all"
 
-# The lint level for crates that have been yanked from their source registry (all, workspace, transitive, none)
-yanked = "all"
+# The lint level for crates that have been yanked from their source registry (allow, warn, deny)
+yanked = "deny"
 
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
