@@ -5531,7 +5531,7 @@ dependencies = [
  "statrs",
  "tempfile",
  "test-case",
- "thiserror 1.0.69",
+ "thiserror 2.0.14",
  "tokio-test",
  "wasmparser 0.217.1",
 ]
@@ -5646,7 +5646,7 @@ dependencies = [
  "serial_test",
  "tempfile",
  "test-case",
- "thiserror 1.0.69",
+ "thiserror 2.0.14",
  "tokio",
  "tokio-test",
  "uuid",
