@@ -3,6 +3,7 @@
 
 [licenses]
 # List of explicitly allowed licenses
+# All other licenses are denied by default in version 2 format
 allow = [
     "MIT",
     "Apache-2.0",
@@ -13,14 +14,7 @@ allow = [
     "Unicode-DFS-2016",
     "CC0-1.0",
 ]
-
-# List of explicitly disallowed licenses
-deny = [
-    "GPL-3.0",
-    "AGPL-3.0",
-    "LGPL-3.0",
-    "LGPL-2.1",
-]
+# Note: GPL-3.0, AGPL-3.0, LGPL-3.0, LGPL-2.1 are implicitly denied since they're not in allow list
 
 [bans]
 # Lint level for when multiple versions of the same crate are detected
@@ -48,26 +42,20 @@ skip = [
 skip-tree = []
 
 [advisories]
+# Use version 2 of the advisories configuration format
+version = 2
+
 # The path where the advisory database is cloned/fetched into
 db-path = "~/.cargo/advisory-db"
 
 # The URL(s) of the advisory databases to use
 db-urls = ["https://github.com/RustSec/advisory-db"]
 
-# The lint level for security vulnerabilities
-vulnerability = "deny"
-
-# The lint level for unmaintained crates (workspace, warn, deny, or allow)
-unmaintained = "workspace"
-
-# The lint level for crates with unsound advice
-unsound = "warn"
+# The lint level for unmaintained crates
+unmaintained = "deny"
 
 # The lint level for crates that have been yanked from their source registry
-yanked = "warn"
-
-# The lint level for crates with security notices  
-notice = "warn"
+yanked = "deny"
 
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
