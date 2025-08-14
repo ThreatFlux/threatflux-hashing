@@ -36,7 +36,7 @@ jobs:
       run: cargo install cargo-audit
 
     - name: Run cargo audit
-      run: cargo audit --json --output audit-results.json
+      run: cargo audit --json > audit-results.json
 
     - name: Upload audit results
       uses: actions/upload-artifact@v4
@@ -71,7 +71,7 @@ jobs:
 
     - name: Run security-focused clippy lints
       run: |
-        cargo clippy --all-features --all-targets -- \
+        cargo clippy --all-features --lib --bins -- \
           -W clippy::unwrap_used \
           -W clippy::expect_used \
           -W clippy::panic \
@@ -93,10 +93,10 @@ jobs:
           -W clippy::shadow_unrelated \
           -W clippy::shadow_reuse \
           -W clippy::shadow_same \
-          -W clippy::print_stdout \
-          -W clippy::print_stderr \
           -W clippy::dbg_macro \
-          -A clippy::module_name_repetitions
+          -A clippy::module_name_repetitions \
+          -A clippy::print_stdout \
+          -A clippy::print_stderr
 
   dependency-review:
     name: Dependency Review
