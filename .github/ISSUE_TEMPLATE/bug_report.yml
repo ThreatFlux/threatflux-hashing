@@ -24,7 +24,7 @@ body:
       label: Version
       description: What version of threatflux-hashing are you running?
       options:
-        - 0.1.0 (Latest)
+        - 1.7.0 (Latest)
         - main branch
         - Other (please specify in description)
     validations:

@@ -17,7 +17,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-threatflux-hashing = "0.1.0"
+threatflux-hashing = "1.7.0"
 ```
 
 ## Quick Start
@@ -149,7 +149,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-threatflux-hashing = { version = "0.1.0", default-features = false }
+threatflux-hashing = { version = "1.7.0", default-features = false }
 ```
 
 ## License

@@ -12,6 +12,17 @@ use tokio::task;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
 // Global semaphore to limit concurrent file operations
 static HASH_SEMAPHORE: std::sync::OnceLock<Arc<Semaphore>> = std::sync::OnceLock::new();
 
@@ -184,7 +195,7 @@ fn calculate_md5_sync(path: &Path, buffer_size: usize) -> Result<String> {
         }
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(encode_hex(&hasher.finalize()))
 }
 
 fn calculate_sha256(path: &Path, buffer_size: usize) -> Result<String> {
@@ -203,7 +214,7 @@ fn calculate_sha256(path: &Path, buffer_size: usize) -> Result<String> {
         }
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(encode_hex(&hasher.finalize()))
 }
 
 fn calculate_sha512(path: &Path, buffer_size: usize) -> Result<String> {
@@ -222,7 +233,7 @@ fn calculate_sha512(path: &Path, buffer_size: usize) -> Result<String> {
         }
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(encode_hex(&hasher.finalize()))
 }
 
 fn calculate_blake3(path: &Path, buffer_size: usize) -> Result<String> {

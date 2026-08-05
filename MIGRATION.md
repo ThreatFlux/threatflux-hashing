@@ -13,7 +13,7 @@ Replace the individual hash dependencies with the new library:
 # blake3 = "1.5"
 
 # Add this instead:
-threatflux-hashing = { version = "0.1.0", features = ["serde"] }
+threatflux-hashing = { version = "1.7.0", features = ["serde"] }
 ```
 
 ## Step 2: Create Compatibility Wrapper
