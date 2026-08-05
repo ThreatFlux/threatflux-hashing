@@ -1,9 +1,9 @@
 (function() {
-    var implementors = Object.fromEntries([["threatflux_hashing",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/error/trait.Error.html\" title=\"trait core::error::Error\">Error</a> for <a class=\"enum\" href=\"threatflux_hashing/error/enum.HashError.html\" title=\"enum threatflux_hashing::error::HashError\">HashError</a>"]]]]);
+    const implementors = Object.fromEntries([["threatflux_hashing",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.97.1/core/error/trait.Error.html\" title=\"trait core::error::Error\">Error</a> for <a class=\"enum\" href=\"threatflux_hashing/error/enum.HashError.html\" title=\"enum threatflux_hashing::error::HashError\">HashError</a>",0]]]]);
     if (window.register_implementors) {
         window.register_implementors(implementors);
     } else {
         window.pending_implementors = implementors;
     }
 })()
-//{"start":57,"fragment_lengths":[309]}
+//{"start":59,"fragment_lengths":[311]}
