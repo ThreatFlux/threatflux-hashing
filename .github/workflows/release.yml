@@ -31,8 +31,8 @@ jobs:
       id: get_version
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-          TAG_NAME="${VERSION}"
+          TAG_NAME="${{ github.event.inputs.version }}"
+          VERSION="${TAG_NAME#v}"
         else
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG_NAME#v}"
