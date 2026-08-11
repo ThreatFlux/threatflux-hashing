@@ -37,8 +37,8 @@ jobs:
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG_NAME#v}"
         fi
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
         echo "Releasing version: ${VERSION}"
         echo "Tag name: ${TAG_NAME}"
 
