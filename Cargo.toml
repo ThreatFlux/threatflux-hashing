@@ -14,21 +14,21 @@ categories = ["cryptography", "filesystem", "asynchronous"]
 readme = "README.md"
 
 [dependencies]
-blake3 = "1.5"
+blake3 = "1.8.6"
 md-5 = "0.11"
 sha2 = "0.11"
-tokio = { version = "1.47", features = ["rt", "macros", "fs", "sync"] }
-serde = { version = "1.0", features = ["derive"], optional = true }
-thiserror = "2.0"
-futures = "0.3"
+tokio = { version = "1.53.1", features = ["rt", "macros", "fs", "sync"] }
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+thiserror = "2.0.20"
+futures = "0.3.33"
 
 [dev-dependencies]
-tempfile = "3.8"
-tokio = { version = "1.47", features = ["full"] }
-criterion = { version = "0.7", features = ["html_reports"] }
-hex = "0.4"
-serde_json = "1.0"
-pretty_assertions = "1.4"
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["full"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
+hex = "0.4.3"
+serde_json = "1.0.151"
+pretty_assertions = "1.4.1"
 
 [features]
 default = ["serde"]

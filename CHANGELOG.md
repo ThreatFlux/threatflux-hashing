@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed every dependency requirement to the latest stable release,
+  including `blake3` 1.8.6, `tokio` 1.53.1, `futures` 0.3.33, and `criterion`
+  0.8.2 for benchmarks.
+- Pinned the development toolchain to Rust 1.97.1 with `rust-toolchain.toml`.
+
+### Added
+
+- `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md`, matching the
+  documentation set used across ThreatFlux crates.
+- Build, crate, documentation, license, and MSRV badges in the README.
+
+### Fixed
+
+- The README declared `## Features` twice; the cargo feature list is now
+  `## Cargo features`.
+- Corrected the re-export comment in `src/lib.rs`, which described `futures`
+  while re-exporting `tokio`.
+
 ## [1.7.0] - 2026-08-05
 
 ### Changed

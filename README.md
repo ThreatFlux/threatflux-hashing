@@ -1,5 +1,12 @@
 # ThreatFlux Hashing
 
+[![CI](https://github.com/ThreatFlux/threatflux-hashing/actions/workflows/ci.yml/badge.svg)](https://github.com/ThreatFlux/threatflux-hashing/actions/workflows/ci.yml)
+[![Security](https://github.com/ThreatFlux/threatflux-hashing/actions/workflows/security.yml/badge.svg)](https://github.com/ThreatFlux/threatflux-hashing/actions/workflows/security.yml)
+[![Crates.io](https://img.shields.io/crates/v/threatflux-hashing.svg)](https://crates.io/crates/threatflux-hashing)
+[![Documentation](https://docs.rs/threatflux-hashing/badge.svg)](https://docs.rs/threatflux-hashing)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](https://www.rust-lang.org)
+
 A high-performance async file hashing library for Rust, supporting MD5, SHA256, SHA512, and BLAKE3 algorithms with concurrent processing capabilities.
 
 ## Features
@@ -19,6 +26,8 @@ Add this to your `Cargo.toml`:
 [dependencies]
 threatflux-hashing = "1.7.0"
 ```
+
+The minimum supported Rust version is 1.95.0.
 
 ## Quick Start
 
@@ -143,14 +152,18 @@ async fn main() {
 }
 ```
 
-## Features
+## Cargo features
 
-- `serde` (default): Enable serialization/deserialization support
+- `serde` (default): derive `Serialize`/`Deserialize` for [`Hashes`].
+
+Opt out to drop the `serde` dependency:
 
 ```toml
 [dependencies]
 threatflux-hashing = { version = "1.7.0", default-features = false }
 ```
+
+[`Hashes`]: https://docs.rs/threatflux-hashing/latest/threatflux_hashing/hasher/struct.Hashes.html
 
 ## License
 
@@ -158,7 +171,11 @@ Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development workflow and [DEVELOPMENT.md](DEVELOPMENT.md) for local tooling
+setup. Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md); participation is covered by the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Benchmarks
 

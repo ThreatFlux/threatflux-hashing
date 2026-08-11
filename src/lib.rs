@@ -60,5 +60,5 @@ pub use hasher::{
     HashConfig, Hashes,
 };
 
-// Re-export futures for convenience
+// Re-export tokio for convenience
 pub use tokio;
