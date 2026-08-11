@@ -2,164 +2,203 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
-  schedule:
-    # Run tests weekly on Sunday at 2 AM UTC
-    - cron: '0 2 * * 0'
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUST_STABLE: 1.97.1
+  RUST_MSRV: 1.95.0
 
 jobs:
-  test:
-    name: Test Suite
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta, nightly]
-        exclude:
-          # Reduce CI load by excluding some combinations
-          - os: windows-latest
-            rust: beta
-          - os: macos-latest
-            rust: beta
-      fail-fast: false
-
-    steps:
-    - uses: actions/checkout@v5
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-        cache: true
-
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-
-    - name: Run tests (default features)
-      run: cargo test --verbose
-
-    - name: Run tests (all features)
-      run: cargo test --all-features --verbose
-
-    - name: Run tests (no default features)
-      run: cargo test --no-default-features --verbose
-
-    - name: Run doctests
-      run: cargo test --doc
-
-    - name: Test examples
-      run: |
-        cargo run --example basic_usage
-        cargo run --example concurrent_hashing
-
-  lint:
-    name: Linting
+  quality:
+    name: Format, lint, docs, and package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        components: rustfmt, clippy
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: clippy, rustfmt
 
-    - name: Check formatting
-      run: cargo fmt --all -- --check
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-quality-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
 
-    - name: Run clippy (default features)
-      run: cargo clippy --all-targets -- -D warnings
+      - name: Install workflow linter
+        env:
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ACTIONLINT_VERSION: 1.7.12
+        shell: bash
+        run: |
+          archive="${RUNNER_TEMP}/actionlint.tar.gz"
+          install_dir="${RUNNER_TEMP}/actionlint"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$archive" | sha256sum --check --strict
+          mkdir -p "$install_dir"
+          tar -xzf "$archive" -C "$install_dir"
+          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
-    - name: Run clippy (all features)
-      run: cargo clippy --all-features --all-targets -- -D warnings
+      - name: Lint GitHub Actions workflows
+        run: actionlint
 
-    - name: Run clippy (no default features)
-      run: cargo clippy --no-default-features --all-targets -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check default features
+        run: cargo check --all-targets --locked
+
+      - name: Check no default features
+        run: cargo check --all-targets --no-default-features --locked
+
+      - name: Lint all features
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Lint no default features
+        run: cargo clippy --all-targets --no-default-features --locked -- -D warnings
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: Verify crate package
+        run: cargo package --locked
+
+  msrv:
+    name: MSRV (1.95.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_MSRV }}
+
+      - name: Check all targets and features
+        run: cargo check --all-targets --all-features --locked
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-tests-${{ env.RUST_STABLE }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Run default-feature tests
+        if: runner.os == 'Linux'
+        run: cargo test --locked
+
+      - name: Run no-default-feature tests
+        if: runner.os == 'Linux'
+        run: cargo test --no-default-features --locked
+
+      - name: Run all-feature tests
+        run: cargo test --all-features --locked
+
+  features:
+    name: Feature powerset
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-hack@0.6.45
+
+      - name: Check feature combinations
+        run: cargo hack check --feature-powerset --depth 2 --locked
 
   coverage:
     name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        components: llvm-tools-preview
-        cache: true
-
-    - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@cargo-llvm-cov
-
-    - name: Generate code coverage
-      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        files: lcov.info
-        fail_ci_if_error: false
-        token: ${{ secrets.CODECOV_TOKEN }}
-
-  benchmark:
-    name: Benchmark
-    runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-    - uses: actions/checkout@v5
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Run benchmarks
-      run: cargo bench --bench hash_benchmarks
-
-  msrv:
-    name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install cargo-msrv
-      run: cargo install cargo-msrv
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
+          components: llvm-tools-preview
 
-    - name: Verify MSRV
-      run: cargo msrv verify
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-llvm-cov@0.8.7
 
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
+      - name: Generate coverage
+        run: cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Check documentation
-      run: cargo doc --all-features --no-deps --document-private-items
-
-    - name: Test documentation examples
-      run: cargo test --doc --all-features
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: error
+          retention-days: 14

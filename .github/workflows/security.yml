@@ -2,298 +2,87 @@ name: Security
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main]
   schedule:
-    # Run security checks daily at 3 AM UTC
-    - cron: '0 3 * * *'
+    - cron: "17 3 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+  RUST_STABLE: 1.97.1
 
 jobs:
-  security-audit:
-    name: Security Audit
+  supply-chain:
+    name: Dependency policy
     runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    
+    timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
 
-    - name: Install cargo-audit
-      run: cargo install cargo-audit
+      - name: Install security tools
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
 
-    - name: Run cargo audit
-      run: cargo audit --json > audit-results.json
+      - name: Audit advisories
+        run: cargo audit --deny warnings
 
-    - name: Upload audit results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: security-audit-results
-        path: audit-results.json
+      - name: Enforce dependency policy
+        run: cargo deny check
 
-    - name: Check for vulnerabilities
-      run: |
-        if [ -f audit-results.json ]; then
-          # Check if any vulnerabilities were found (count > 0)
-          VULN_COUNT=$(jq -r '.vulnerabilities.count // 0' audit-results.json)
-          if [ "$VULN_COUNT" -gt 0 ]; then
-            echo "Security vulnerabilities found ($VULN_COUNT)!"
-            cat audit-results.json
-            exit 1
-          else
-            echo "No security vulnerabilities found."
-          fi
-        else
-          echo "Audit results file not found."
-          exit 1
-        fi
-
-  clippy-security:
-    name: Security-focused Clippy
+  semver:
+    name: Public API compatibility
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        components: clippy
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_STABLE }}
 
-    - name: Run security-focused clippy lints
-      run: |
-        cargo clippy --all-features --lib --bins -- \
-          -W clippy::unwrap_used \
-          -W clippy::expect_used \
-          -W clippy::panic \
-          -W clippy::unimplemented \
-          -W clippy::todo \
-          -W clippy::unreachable \
-          -W clippy::arithmetic_side_effects \
-          -W clippy::float_arithmetic \
-          -W clippy::indexing_slicing \
-          -W clippy::as_conversions \
-          -W clippy::lossy_float_literal \
-          -W clippy::mem_forget \
-          -W clippy::fn_to_numeric_cast \
-          -W clippy::fn_to_numeric_cast_with_truncation \
-          -W clippy::cast_possible_truncation \
-          -W clippy::cast_possible_wrap \
-          -W clippy::cast_sign_loss \
-          -W clippy::cast_precision_loss \
-          -W clippy::shadow_unrelated \
-          -W clippy::shadow_reuse \
-          -W clippy::shadow_same \
-          -W clippy::dbg_macro \
-          -A clippy::module_name_repetitions \
-          -A clippy::print_stdout \
-          -A clippy::print_stderr
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-semver-checks@0.49.0
+
+      - name: Check public API compatibility
+        run: cargo semver-checks check-release --all-features
 
   dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
+    name: Dependency review
     if: github.event_name == 'pull_request'
-    
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v5
-
-    - name: Dependency Review
-      uses: actions/dependency-review-action@v4
-      with:
-        fail-on-severity: moderate
-        allow-ghsas: GHSA-1234-5678-9012  # Add specific GHSA IDs to allow if needed
-
-  cargo-deny:
-    name: Cargo Deny
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Install cargo-deny
-      run: cargo install cargo-deny
-
-    - name: Create deny.toml if it doesn't exist
-      run: |
-        if [ ! -f deny.toml ]; then
-          cat > deny.toml << 'EOF'
-        [licenses]
-        # Allow common open source licenses
-        allow = [
-            "MIT",
-            "Apache-2.0",
-            "Apache-2.0 WITH LLVM-exception",
-            "BSD-2-Clause",
-            "BSD-3-Clause",
-            "ISC",
-            "Unicode-DFS-2016",
-        ]
-        # Deny problematic licenses
-        deny = [
-            "GPL-3.0",
-            "AGPL-3.0",
-            "LGPL-3.0",
-        ]
-        
-        [bans]
-        # Deny specific crates
-        deny = [
-            { name = "openssl", use-instead = "rustls" },
-            { name = "openssl-sys", use-instead = "rustls" },
-        ]
-        # Allow duplicate dependencies for build tools
-        skip = []
-        
-        [advisories]
-        # Advisory database configuration
-        db-path = "~/.cargo/advisory-db"
-        db-urls = ["https://github.com/RustSec/advisory-db"]
-        vulnerability = "deny"
-        unmaintained = "warn"
-        unsound = "warn"
-        yanked = "warn"
-        notice = "warn"
-        
-        [sources]
-        # Only allow crates from crates.io
-        unknown-registry = "warn"
-        unknown-git = "warn"
-        allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-        allow-git = []
-        EOF
-        fi
-
-    - name: Check licenses, bans, advisories, and sources
-      run: cargo deny check
-
-  semver-checks:
-    name: Semantic Versioning
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Install cargo-semver-checks
-      run: cargo install cargo-semver-checks
-
-    - name: Check for breaking changes
-      run: cargo semver-checks check-release
-
-  supply-chain:
-    name: Supply Chain Security
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v5
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Generate SBOM
-      run: |
-        cargo tree --format "{p} {l}" --all-features > sbom.txt
-        cargo tree --format "{p}" --all-features --edges normal > dependencies.txt
-
-    - name: Upload SBOM
-      uses: actions/upload-artifact@v4
-      with:
-        name: software-bill-of-materials
-        path: |
-          sbom.txt
-          dependencies.txt
-
-    - name: Check for suspicious dependencies
-      run: |
-        # Check for dependencies with suspicious names or patterns
-        if grep -i -E "(backdoor|malware|virus|trojan|keylog|steal|hack)" dependencies.txt; then
-          echo "Suspicious dependency names detected!"
-          exit 1
-        fi
-        
-        # Check for too many dependencies (potential supply chain bloat)
-        DEPENDENCY_COUNT=$(wc -l < dependencies.txt)
-        if [ "$DEPENDENCY_COUNT" -gt 100 ]; then
-          echo "Warning: High number of dependencies ($DEPENDENCY_COUNT). Consider reducing dependency footprint."
-        fi
-
-  secrets-scan:
-    name: Secret Scanning
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-
-    - name: Run TruffleHog OSS
-      uses: trufflesecurity/trufflehog@main
-      with:
-        path: ./
-        extra_args: --debug --only-verified
-
-  code-ql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v5
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: rust
-        queries: security-and-quality
-
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
-
-    - name: Build for CodeQL
-      run: cargo build --all-features
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
-      with:
-        category: "/language:rust"
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
