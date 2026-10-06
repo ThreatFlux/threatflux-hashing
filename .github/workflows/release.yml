@@ -1,218 +1,514 @@
 name: Release
 
+# Publishes a release tag: verifies the crate on every supported target,
+# generates the SBOM, publishes to crates.io with trusted publishing and attaches
+# the published crate and SBOM to the GitHub Release.
+#
+# A tag pushed by auto-release (the ThreatFlux automation App) starts this
+# workflow through `push: tags`. When auto-release falls back to GITHUB_TOKEN it
+# dispatches this workflow on the new tag with the version input instead.
+#
+# Read-only by default; only the publish job gets id-token (for the crates.io
+# OIDC exchange) and only the GitHub Release job gets contents: write.
+permissions:
+  contents: read
+
 on:
   push:
     tags:
-      - 'v*'
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
-        required: true
+        description: >-
+          Version to release without the v prefix (e.g. 1.7.1); a real run builds tag v<version>. A dry run defaults to the
+          Cargo.toml version.
+        required: false
         type: string
+      source_ref:
+        description: "Dry run only: git ref to build (defaults to the ref the workflow is dispatched on)"
+        required: false
+        type: string
+      dry_run:
+        description: Build, test, package and run cargo publish --dry-run without publishing or changing the GitHub Release
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # A dry run never queues behind, or holds up, a real release.
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'dry-run' || 'publish' }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUST_VERSION: 1.97.1
+  PACKAGE_NAME: threatflux-hashing
+  # Only workflow_dispatch can set this; tag pushes always perform a real release.
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
 
 jobs:
-  validate:
-    name: Validate Release
+  prepare:
+    name: Prepare release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      tag_name: ${{ steps.get_version.outputs.tag_name }}
+      version: ${{ steps.manifest.outputs.version }}
+      tag: ${{ steps.record.outputs.tag }}
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
-    - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
+      - name: Determine version and source ref
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${INPUT_VERSION#v}"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            SOURCE_REF="$GITHUB_REF"
+          elif [[ "$DRY_RUN" == "true" ]]; then
+            SOURCE_REF="${INPUT_SOURCE_REF:-$GITHUB_REF}"
+          else
+            if [[ -z "$VERSION" && "$GITHUB_REF" == refs/tags/v* ]]; then
+              VERSION="${GITHUB_REF_NAME#v}"
+            fi
+            if [[ -n "$INPUT_SOURCE_REF" ]]; then
+              echo "source_ref only applies to dry runs; a real release always builds its tag" >&2
+              exit 1
+            fi
+            if [[ -z "$VERSION" ]]; then
+              echo "A real release needs the version input or a dispatch on its v<version> tag" >&2
+              exit 1
+            fi
+            SOURCE_REF="refs/tags/v${VERSION}"
+          fi
+          if [[ "$SOURCE_REF" == *$'\n'* || "$SOURCE_REF" == *$'\r'* ]]; then
+            echo "Source ref must be one line" >&2
+            exit 1
+          fi
+          if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version ${VERSION} is not a semantic version" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "source_ref=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
 
-    - name: Get version from tag or input
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          TAG_NAME="${{ github.event.inputs.version }}"
-          VERSION="${TAG_NAME#v}"
-        else
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG_NAME#v}"
-        fi
-        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-        echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-        echo "Releasing version: ${VERSION}"
-        echo "Tag name: ${TAG_NAME}"
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ steps.version.outputs.source_ref }}
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      # Resolve the ref once; every downstream job checks out this exact commit,
+      # so a moving branch or tag cannot make the jobs build different sources.
+      - name: Resolve source commit
+        id: source
+        run: echo "sha=$(git rev-parse --verify 'HEAD^{commit}')" >> "$GITHUB_OUTPUT"
 
-    - name: Validate Cargo.toml version
-      run: |
-        CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-        if [ "$CARGO_VERSION" != "${{ steps.get_version.outputs.version }}" ]; then
-          echo "Version mismatch: Cargo.toml has $CARGO_VERSION but tag/input has ${{ steps.get_version.outputs.version }}"
-          exit 1
-        fi
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
-    - name: Run tests
-      run: |
-        cargo test --all-features
-        cargo test --no-default-features
+      # The crate is published at its Cargo.toml version, so a release tag must
+      # match it. A dry run may rehearse a version that is not bumped yet, so it
+      # only warns and packages the manifest version.
+      - name: Check manifest version
+        id: manifest
+        env:
+          REQUESTED_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION="$(cargo metadata --locked --no-deps --format-version 1 |
+            jq -er --arg name "$PACKAGE_NAME" '.packages[] | select(.name == $name) | .version')"
+          VERSION="${REQUESTED_VERSION:-$MANIFEST_VERSION}"
+          if [[ "$MANIFEST_VERSION" != "$VERSION" ]]; then
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "::warning::Cargo.toml version ${MANIFEST_VERSION} does not match ${VERSION}; the dry run packages and verifies ${MANIFEST_VERSION}"
+            else
+              echo "Cargo.toml version ${MANIFEST_VERSION} does not match release version ${VERSION}" >&2
+              exit 1
+            fi
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "manifest_version=${MANIFEST_VERSION}" >> "$GITHUB_OUTPUT"
 
-    - name: Check formatting and linting
-      run: |
-        cargo fmt --all -- --check
-        cargo clippy --all-features -- -D warnings
+      # Only commits on main are released: auto-release tags the version commit
+      # it pushes to main, and a tag elsewhere is refused before anything is
+      # built or published.
+      - name: Verify release tag provenance
+        if: env.DRY_RUN != 'true'
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          TAG_SHA="$(git rev-parse -q --verify "refs/tags/${TAG}^{commit}")" || {
+            echo "Release tag ${TAG} does not exist" >&2
+            exit 1
+          }
+          if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]; then
+            echo "Tag ${TAG} points to ${TAG_SHA}, not the source commit ${SOURCE_SHA}" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
+            echo "Release commit ${SOURCE_SHA} is not reachable from main" >&2
+            exit 1
+          fi
 
-  build-and-test:
-    name: Build and Test
-    needs: validate
+      - name: Record release
+        id: record
+        env:
+          VERSION: ${{ steps.manifest.outputs.version }}
+          MANIFEST_VERSION: ${{ steps.manifest.outputs.manifest_version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          {
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "### Release dry run: v${VERSION}"
+              echo
+              echo "Source commit \`${SOURCE_SHA}\`; Cargo.toml version \`${MANIFEST_VERSION}\` is packaged and verified."
+              echo "Nothing is tagged, published to crates.io, or attached to a GitHub Release."
+            else
+              echo "### Release v${VERSION}"
+              echo
+              echo "Source commit \`${SOURCE_SHA}\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: threatflux-hashing-linux
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
           - os: windows-latest
-            artifact_name: threatflux-hashing-windows
-          - os: macos-latest
-            artifact_name: threatflux-hashing-macos
-
+            target: x86_64-pc-windows-msvc
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
 
-    - name: Build release
-      run: cargo build --release --all-features
+      - name: Install musl tools
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
-    - name: Run comprehensive tests
-      run: |
-        cargo test --release --all-features
-        cargo test --release --no-default-features
+      # Every runner builds natively for its target, so the release-profile
+      # tests run on each supported platform, not just compile there.
+      - name: Build release profile
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --locked --release --target "$TARGET" --all-features
+          cargo build --locked --release --target "$TARGET" --no-default-features
 
-    - name: Run benchmarks
-      run: cargo bench --bench hash_benchmarks
+      - name: Test release profile
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo test --locked --release --target "$TARGET" --all-features
+          cargo test --locked --release --target "$TARGET" --no-default-features
 
-  publish-crate:
-    name: Publish to Crates.io
-    needs: [validate, build-and-test]
+  sbom:
+    name: Generate SBOM
+    needs: prepare
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
-    - name: Login to Crates.io
-      run: cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Install cargo-cyclonedx
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-cyclonedx@0.5.9
 
-    - name: Publish to Crates.io
-      run: cargo publish --all-features
+      - name: Generate CycloneDX SBOM
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo cyclonedx --manifest-path Cargo.toml --all-features --format json --spec-version 1.5 \
+            --override-filename "${PACKAGE_NAME}-sbom"
+          mkdir -p sbom
+          mv "${PACKAGE_NAME}-sbom.json" "sbom/${PACKAGE_NAME}-v${VERSION}.cdx.json"
+          jq -e --arg name "$PACKAGE_NAME" '.metadata.component.name == $name and (.components | length) > 0' \
+            "sbom/${PACKAGE_NAME}-v${VERSION}.cdx.json" > /dev/null
 
-  create-release:
-    name: Create GitHub Release
-    needs: [validate, build-and-test]
+      - name: Upload SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sbom
+          path: sbom/*.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish to crates.io
+    needs: [prepare, build, sbom]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # crates.io trusted publishing trusts this workflow file (release.yml) in the
+    # crates-io environment. A dry run gets an empty environment name, which runs
+    # the job without an environment, so it records no deployment and its OIDC
+    # identity cannot be exchanged for a registry token.
+    environment:
+      name: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) && 'crates-io' || '' }}
     permissions:
-      contents: write
-      
+      contents: read
+      id-token: write # Exchanged for a short-lived crates.io token; no registry secret is used.
     steps:
-    - uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
-    - name: Generate changelog
-      id: changelog
-      run: |
-        # Get the previous tag
-        PREV_TAG=$(git describe --tags --abbrev=0 "${{ needs.validate.outputs.tag_name }}^" 2>/dev/null || echo "")
-        
-        # Generate changelog
-        if [ -n "$PREV_TAG" ]; then
-          CHANGELOG=$(git log --pretty=format:"- %s (%h)" "$PREV_TAG..${{ needs.validate.outputs.tag_name }}")
-        else
-          CHANGELOG=$(git log --pretty=format:"- %s (%h)")
-        fi
-        
-        # Create release notes
-        cat > release_notes.md << EOF
-        # ThreatFlux Hashing ${{ needs.validate.outputs.version }}
-        
-        ## Changes
-        
-        $CHANGELOG
-        
-        ## Installation
-        
-        Add this to your \`Cargo.toml\`:
-        
-        \`\`\`toml
-        [dependencies]
-        threatflux-hashing = "${{ needs.validate.outputs.version }}"
-        \`\`\`
-        
-        ## Documentation
-        
-        - [Crates.io](https://crates.io/crates/threatflux-hashing)
-        - [docs.rs](https://docs.rs/threatflux-hashing/${{ needs.validate.outputs.version }})
-        EOF
+      - name: Package crate
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(cargo metadata --locked --no-deps --format-version 1 |
+            jq -er --arg name "$PACKAGE_NAME" '.packages[] | select(.name == $name) | .version')"
+          mkdir -p target
+          cargo package --locked --all-features --list > target/package-contents.txt
+          cargo package --locked --all-features
+          CRATE="target/package/${PACKAGE_NAME}-${VERSION}.crate"
+          test -f "$CRATE"
+          {
+            echo "version=${VERSION}"
+            echo "crate=${CRATE}"
+            echo "sha256=$(sha256sum "$CRATE" | awk '{ print $1 }')"
+          } >> "$GITHUB_OUTPUT"
 
-    - name: Build documentation package
-      run: |
-        cargo doc --all-features --no-deps
-        tar -czf docs.tar.gz -C target/doc .
+      - name: Verify crates.io publication (dry run)
+        if: env.DRY_RUN == 'true'
+        env:
+          CRATE: ${{ steps.package.outputs.crate }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
+        run: |
+          cargo publish --locked --all-features --dry-run
+          echo "Dry run packaged ${CRATE} (sha256 ${SHA256}); nothing was published."
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ needs.validate.outputs.tag_name }}
-        name: ThreatFlux Hashing ${{ needs.validate.outputs.version }}
-        body_path: release_notes.md
-        files: |
-          docs.tar.gz
-        draft: false
-        prerelease: false
-        generate_release_notes: true
+      # crates.io versions are immutable, so a rerun (or a second run for the
+      # same tag) skips a version that is already published instead of failing.
+      - name: Check crates.io for this version
+        id: registry
+        if: env.DRY_RUN != 'true'
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --retry 3 --retry-all-errors \
+            --user-agent "${GITHUB_REPOSITORY}-release/${GITHUB_RUN_ID} (https://github.com/${GITHUB_REPOSITORY})" \
+            --output /dev/null --write-out '%{http_code}' \
+            "https://crates.io/api/v1/crates/${PACKAGE_NAME}/${VERSION}")"
+          case "$status" in
+            200)
+              echo "::notice::${PACKAGE_NAME} ${VERSION} is already on crates.io; skipping the publish"
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404) echo "published=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "crates.io returned HTTP ${status} for ${PACKAGE_NAME} ${VERSION}" >&2
+              exit 1
+              ;;
+          esac
 
-  update-docs:
-    name: Update Documentation
-    needs: [create-release]
+      - name: Authenticate with crates.io
+        id: crates-io-auth
+        if: env.DRY_RUN != 'true' && steps.registry.outputs.published == 'false'
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
+      # A failed OIDC exchange or publish fails the release; there is no
+      # fallback to a long-lived registry token.
+      - name: Publish to crates.io
+        if: env.DRY_RUN != 'true' && steps.registry.outputs.published == 'false'
+        env:
+          # Short-lived trusted-publishing token; the auth action revokes it in
+          # its post step.
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+        run: cargo publish --locked --all-features
+
+      # Attach the crate exactly as crates.io serves it.
+      - name: Download the published crate
+        if: env.DRY_RUN != 'true'
+        env:
+          VERSION: ${{ steps.package.outputs.version }}
+          LOCAL_SHA256: ${{ steps.package.outputs.sha256 }}
+          PUBLISHED_HERE: ${{ steps.registry.outputs.published == 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          crate="${PACKAGE_NAME}-${VERSION}.crate"
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --location \
+              --user-agent "${GITHUB_REPOSITORY}-release/${GITHUB_RUN_ID} (https://github.com/${GITHUB_REPOSITORY})" \
+              --output "dist/${crate}" \
+              "https://crates.io/api/v1/crates/${PACKAGE_NAME}/${VERSION}/download"; then
+              break
+            fi
+            if [[ "$attempt" == 12 ]]; then
+              echo "${PACKAGE_NAME} ${VERSION} was not downloadable from crates.io after 12 attempts" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          published_sha256="$(sha256sum "dist/${crate}" | awk '{ print $1 }')"
+          if [[ "$published_sha256" != "$LOCAL_SHA256" ]]; then
+            if [[ "$PUBLISHED_HERE" == "true" ]]; then
+              echo "The crate on crates.io does not match the package this run uploaded" >&2
+              exit 1
+            fi
+            echo "::warning::The crate already on crates.io differs from this run's package; attaching the published crate"
+          fi
+          cp target/package-contents.txt dist/
+          (cd dist && sha256sum "$crate" > "${crate}.sha256")
+
+      - name: Upload crate package
+        if: env.DRY_RUN != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-crate
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  github-release:
+    name: Update GitHub Release
+    needs: [prepare, publish]
+    if: github.event_name != 'workflow_dispatch' || !inputs.dry_run
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    
+    timeout-minutes: 15
+    permissions:
+      attestations: write # Persists the build provenance attestation.
+      contents: write # Creates or updates the release and uploads its assets.
+      id-token: write # Signs the provenance attestation with GitHub OIDC.
     steps:
-    - uses: actions/checkout@v5
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: stable
-        cache: true
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
 
-    - name: Build documentation
-      run: cargo doc --all-features --no-deps
+      - name: Verify crate checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check ./*.crate.sha256
 
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v4
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./target/doc
-        cname: threatflux.ai
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.crate
+            dist/*.cdx.json
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE="ThreatFlux Hashing ${VERSION}"
+          NOTES="$(awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]( - .*)?$" { in_release = 1; next }
+            in_release && /^## \[/ { exit }
+            in_release && /^\[[^]]+\]: / { exit }
+            in_release { print }
+          ' CHANGELOG.md)"
+          PRERELEASE=false
+          if [[ "$VERSION" == *-* ]]; then
+            PRERELEASE=true
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # auto-release already created the release; keep its notes unless
+            # CHANGELOG.md has a section for this version.
+            if [[ -n "${NOTES//[[:space:]]/}" ]]; then
+              printf '%s\n' "$NOTES" > release_notes.md
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file release_notes.md \
+                --prerelease="$PRERELEASE"
+            else
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --prerelease="$PRERELEASE"
+            fi
+          else
+            options=(--repo "$GITHUB_REPOSITORY" --title "$TITLE" --verify-tag)
+            if [[ -n "${NOTES//[[:space:]]/}" ]]; then
+              printf '%s\n' "$NOTES" > release_notes.md
+              options+=(--notes-file release_notes.md)
+            else
+              options+=(--generate-notes)
+            fi
+            if [[ "$PRERELEASE" == "true" ]]; then
+              options+=(--prerelease)
+            fi
+            gh release create "$TAG" "${options[@]}"
+          fi
+
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            dist/*.crate dist/*.crate.sha256 dist/*.cdx.json dist/package-contents.txt

@@ -93,13 +93,16 @@ cargo test --package file-scanner hash
 
 ## Publishing the Library
 
-If you want to publish to crates.io:
+The library is published on crates.io as
+[`threatflux-hashing`](https://crates.io/crates/threatflux-hashing), so depend
+on it by version:
 
-```bash
-cd threatflux-hashing
-cargo publish --dry-run  # Test first
-cargo publish           # Actually publish
+```toml
+threatflux-hashing = "1.7"
 ```
+
+New versions are published by the release workflow, not by hand; see the
+release process in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Alternative: Git Dependency
 

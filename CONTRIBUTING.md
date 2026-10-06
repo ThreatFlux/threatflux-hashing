@@ -58,3 +58,19 @@ Releases are automated. Merging to `main` runs the ThreatFlux auto-release
 workflow, which derives the version from the conventional commits since the last
 tag, updates `Cargo.toml`, and publishes the tag and GitHub Release. Do not bump
 the version by hand in a pull request.
+
+The release tag starts the `Release` workflow (`release.yml`). It builds and
+tests the crate on every supported target, generates a CycloneDX SBOM, publishes
+the crate to crates.io with [trusted publishing](https://crates.io/docs/trusted-publishing)
+(a short-lived token from the workflow's OIDC identity in the `crates-io`
+environment; no registry token is stored in the repository), and attaches the
+published `.crate`, its checksum, and the SBOM to the GitHub Release.
+
+To rehearse a release without publishing anything, run the `Release` workflow
+from the Actions tab with `dry_run` enabled, or:
+
+```bash
+gh workflow run release.yml --ref main -f dry_run=true
+```
+
+`Auto Release` also accepts `dry_run` to report the version it would release.
