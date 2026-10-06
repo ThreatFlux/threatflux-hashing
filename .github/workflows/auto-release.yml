@@ -1,11 +1,17 @@
 name: Auto Release
 
+# Key on the head repository too, so a fork pull request whose branch is named
+# "main" cannot cancel an in-progress release for this repository's main. Dry
+# runs use their own group so a rehearsal never cancels a real release.
 concurrency:
-  group: auto-release-${{ github.event.workflow_run.head_branch || github.ref_name || 'main' }}
+  group: auto-release-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.ref_name || 'main' }}${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '-dry-run' || '' }}
   cancel-in-progress: true
 
+# workflow_run is intended here: the reusable workflow's gate releases only
+# after a successful CI/Security run for this repository (fork runs are
+# refused), so it only ever builds commits already on this repository's main.
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [CI, Security]
     types: [completed]
     branches: [main]
@@ -21,6 +27,11 @@ on:
           - patch
           - minor
           - major
+      dry_run:
+        description: Report the next release without creating a commit, tag, or release
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -33,12 +44,18 @@ jobs:
       actions: write
       contents: write
       pull-requests: write
-    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@7a5f08885a77520db023882c8de17d9e6580b7ae # v0.7.5
+    uses: ThreatFlux/github_actions/.github/workflows/reusable-auto-release.yml@eb9f3cf78c3899be0c4c9323d5cc86de5e1fdee8 # v0.7.7
     with:
       bump: ${{ github.event.inputs.version_bump || 'auto' }}
+      # Only a manual dispatch can request a dry run; workflow_run always releases.
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
       required-workflows: CI,Security
+      # The ThreatFlux automation App pushes the release tag, which starts
+      # release.yml through its `push: tags` trigger, so the reusable workflow
+      # dispatches nothing on that path. release.yml is dispatched (with the
+      # version input) only if the release falls back to GITHUB_TOKEN.
       dispatch-workflows: release.yml
       dispatch-version-workflow: release.yml
-
-    # secrets:
-    #   release-token: ${{ secrets.RELEASE_TOKEN }}
+      github-app-id: ${{ vars.TF_AUTOMATION_APP_ID }}
+    secrets:
+      github-app-private-key: ${{ secrets.TF_AUTOMATION_APP_PRIVATE_KEY }}

@@ -58,11 +58,9 @@ pub async fn calculate_md5(path: &Path) -> Result<String>
 
 ## Next Steps
 
-1. **Publish to crates.io** (optional):
-   ```bash
-   cd threatflux-hashing
-   cargo publish
-   ```
+1. **Publish to crates.io**: done; the crate is published as
+   [`threatflux-hashing`](https://crates.io/crates/threatflux-hashing) and new
+   versions are released by the release workflow (see `CONTRIBUTING.md`).
 
 2. **Update file-scanner**:
    - Replace `src/hash.rs` with `src/hash_wrapper.rs`

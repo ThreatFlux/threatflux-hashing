@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including `blake3` 1.8.6, `tokio` 1.53.1, `futures` 0.3.33, and `criterion`
   0.8.2 for benchmarks.
 - Pinned the development toolchain to Rust 1.97.1 with `rust-toolchain.toml`.
+- Releases are published to crates.io with trusted publishing (no stored
+  registry token) after the crate builds and tests on Linux (x86_64 glibc and
+  musl, aarch64), macOS (Apple silicon and Intel), and Windows; the GitHub
+  Release carries the published crate, its checksum, and a CycloneDX SBOM.
 
 ### Added
 
