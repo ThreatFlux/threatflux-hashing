@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-06
+
 ### Changed
 
 - Refreshed every dependency requirement to the latest stable release,
@@ -17,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registry token) after the crate builds and tests on Linux (x86_64 glibc and
   musl, aarch64), macOS (Apple silicon and Intel), and Windows; the GitHub
   Release carries the published crate, its checksum, and a CycloneDX SBOM.
+- Refreshed the committed `Cargo.lock` to `blake3` 1.8.7 (which no longer
+  depends on `arrayref`), `tokio` 1.53.2, `thiserror` 2.0.21, and `futures`
+  0.3.34.
 
 ### Added
 
@@ -46,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - MD5, SHA-256, and SHA-512 output values remain unchanged.
 
-[Unreleased]: https://github.com/ThreatFlux/threatflux-hashing/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/ThreatFlux/threatflux-hashing/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/ThreatFlux/threatflux-hashing/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/ThreatFlux/threatflux-hashing/releases/tag/v1.7.0
