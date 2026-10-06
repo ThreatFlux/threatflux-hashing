@@ -18,15 +18,14 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    # Every job builds the workflow's own commit: the pushed tag, or the head of
+    # the branch or tag chosen with `gh workflow run --ref`. There is no input
+    # for building some other revision.
     inputs:
       version:
         description: >-
-          Version to release without the v prefix (e.g. 1.7.1); a real run builds tag v<version>. A dry run defaults to the
+          Version without the v prefix (e.g. 1.7.1). A real run must be dispatched on tag v<version>; a dry run defaults to the
           Cargo.toml version.
-        required: false
-        type: string
-      source_ref:
-        description: "Dry run only: git ref to build (defaults to the ref the workflow is dispatched on)"
         required: false
         type: string
       dry_run:
@@ -56,38 +55,22 @@ jobs:
     outputs:
       version: ${{ steps.manifest.outputs.version }}
       tag: ${{ steps.record.outputs.tag }}
-      source_sha: ${{ steps.source.outputs.sha }}
     steps:
-      - name: Determine version and source ref
+      - name: Determine version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${INPUT_VERSION#v}"
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
-            SOURCE_REF="$GITHUB_REF"
-          elif [[ "$DRY_RUN" == "true" ]]; then
-            SOURCE_REF="${INPUT_SOURCE_REF:-$GITHUB_REF}"
-          else
-            if [[ -z "$VERSION" && "$GITHUB_REF" == refs/tags/v* ]]; then
-              VERSION="${GITHUB_REF_NAME#v}"
-            fi
-            if [[ -n "$INPUT_SOURCE_REF" ]]; then
-              echo "source_ref only applies to dry runs; a real release always builds its tag" >&2
-              exit 1
-            fi
-            if [[ -z "$VERSION" ]]; then
-              echo "A real release needs the version input or a dispatch on its v<version> tag" >&2
-              exit 1
-            fi
-            SOURCE_REF="refs/tags/v${VERSION}"
+          elif [[ -z "$VERSION" && "$DRY_RUN" != "true" && "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
           fi
-          if [[ "$SOURCE_REF" == *$'\n'* || "$SOURCE_REF" == *$'\r'* ]]; then
-            echo "Source ref must be one line" >&2
+          if [[ -z "$VERSION" && "$DRY_RUN" != "true" ]]; then
+            echo "A real release needs the version input or a dispatch on its v<version> tag" >&2
             exit 1
           fi
           if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -95,20 +78,12 @@ jobs:
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "source_ref=${SOURCE_REF}" >> "$GITHUB_OUTPUT"
 
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ steps.version.outputs.source_ref }}
-
-      # Resolve the ref once; every downstream job checks out this exact commit,
-      # so a moving branch or tag cannot make the jobs build different sources.
-      - name: Resolve source commit
-        id: source
-        run: echo "sha=$(git rev-parse --verify 'HEAD^{commit}')" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -146,7 +121,6 @@ jobs:
         if: env.DRY_RUN != 'true'
         env:
           VERSION: ${{ steps.manifest.outputs.version }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -155,13 +129,13 @@ jobs:
             echo "Release tag ${TAG} does not exist" >&2
             exit 1
           }
-          if [[ "$TAG_SHA" != "$SOURCE_SHA" ]]; then
-            echo "Tag ${TAG} points to ${TAG_SHA}, not the source commit ${SOURCE_SHA}" >&2
+          if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Tag ${TAG} points to ${TAG_SHA}, not this run's commit ${GITHUB_SHA}; dispatch the release on the tag" >&2
             exit 1
           fi
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
-            echo "Release commit ${SOURCE_SHA} is not reachable from main" >&2
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Release commit ${GITHUB_SHA} is not reachable from main" >&2
             exit 1
           fi
 
@@ -170,7 +144,6 @@ jobs:
         env:
           VERSION: ${{ steps.manifest.outputs.version }}
           MANIFEST_VERSION: ${{ steps.manifest.outputs.manifest_version }}
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -179,12 +152,12 @@ jobs:
             if [[ "$DRY_RUN" == "true" ]]; then
               echo "### Release dry run: v${VERSION}"
               echo
-              echo "Source commit \`${SOURCE_SHA}\`; Cargo.toml version \`${MANIFEST_VERSION}\` is packaged and verified."
+              echo "Source commit \`${GITHUB_SHA}\` (${GITHUB_REF}); Cargo.toml version \`${MANIFEST_VERSION}\` is packaged and verified."
               echo "Nothing is tagged, published to crates.io, or attached to a GitHub Release."
             else
               echo "### Release v${VERSION}"
               echo
-              echo "Source commit \`${SOURCE_SHA}\`."
+              echo "Source commit \`${GITHUB_SHA}\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -214,7 +187,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -256,7 +228,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -308,7 +279,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -443,7 +413,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Download release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
