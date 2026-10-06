@@ -861,7 +861,7 @@ dependencies = [
 
 [[package]]
 name = "threatflux-hashing"
-version = "1.7.0"
+version = "1.7.1"
 dependencies = [
  "blake3",
  "criterion",
