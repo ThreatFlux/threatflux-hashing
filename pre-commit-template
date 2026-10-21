@@ -89,7 +89,13 @@ run_precommit_checks() {
     
     # 1. Check for TODO/FIXME/XXX comments in staged files
     print_status "Checking for TODO/FIXME/XXX comments..."
-    if git diff --cached --name-only | grep "\.rs$" | xargs grep -Hn "TODO\|FIXME\|XXX\|HACK" 2>/dev/null; then
+    local staged_markers=0
+    while IFS= read -r -d '' staged_rust; do
+        if grep -Hn "TODO\|FIXME\|XXX\|HACK" -- "$staged_rust"; then
+            staged_markers=1
+        fi
+    done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.rs')
+    if [[ "$staged_markers" -ne 0 ]]; then
         print_error "Found TODO/FIXME/XXX comments in staged files. Please resolve or document them."
         exit 1
     fi
