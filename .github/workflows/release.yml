@@ -42,7 +42,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUST_VERSION: 1.97.1
+  RUST_VERSION: 1.99.1
   PACKAGE_NAME: threatflux-hashing
   # Only workflow_dispatch can set this; tag pushes always perform a real release.
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
