@@ -35,9 +35,10 @@ on:
         default: false
 
 concurrency:
-  # A dry run never queues behind, or holds up, a real release.
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'dry-run' || 'publish' }}-${{ github.ref }}
+  # Queue every real publication; dry-run rehearsals use separate groups.
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && format('release-dry-run-{0}', github.ref) || 'release-publish' }}
   cancel-in-progress: false
+  queue: max
 
 env:
   CARGO_TERM_COLOR: always
