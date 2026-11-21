@@ -54,10 +54,12 @@ cargo bench            # optional, benchmarks are not part of CI gating
 
 ## Release process
 
-Releases are automated. Merging to `main` runs the ThreatFlux auto-release
-workflow, which derives the version from the conventional commits since the last
-tag, updates `Cargo.toml`, and publishes the tag and GitHub Release. Do not bump
-the version by hand in a pull request.
+After CI and Security pass on `main`, the ThreatFlux auto-release workflow
+uses conventional commits since the last tag to determine the next version.
+When a release is due, it opens or updates a release pull request with the
+version bump. A code owner reviews the proposal before merge. After CI and
+Security pass on the merged release commit, the workflow publishes its tag
+and GitHub Release. Do not bump the version by hand in a pull request.
 
 The release tag starts the `Release` workflow (`release.yml`). It builds and
 tests the crate on every supported target, generates a CycloneDX SBOM, publishes

@@ -51,6 +51,7 @@ jobs:
       # Only a manual dispatch can request a dry run; workflow_run always releases.
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
       required-workflows: CI,Security
+      create-pr: true
       # The ThreatFlux automation App pushes the release tag, which starts
       # release.yml through its `push: tags` trigger, so the reusable workflow
       # dispatches nothing on that path. release.yml is dispatched (with the
