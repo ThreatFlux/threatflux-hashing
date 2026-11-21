@@ -59,7 +59,9 @@ uses conventional commits since the last tag to determine the next version.
 When a release is due, it opens or updates a release pull request with the
 version bump. A code owner reviews the proposal before merge. After CI and
 Security pass on the merged release commit, the workflow publishes its tag
-and GitHub Release. Do not bump the version by hand in a pull request.
+and GitHub Release. If `main` advances before publication, the workflow
+refuses to tag the later commit with the untagged version. Do not bump the
+version by hand in a pull request.
 
 The release tag starts the `Release` workflow (`release.yml`). It builds and
 tests the crate on every supported target, generates a CycloneDX SBOM, publishes
